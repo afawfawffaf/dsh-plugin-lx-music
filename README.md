@@ -144,16 +144,30 @@ New-Item -ItemType Junction -Path "$profileDir\node_modules\dsh-plugin-lx-music"
 - `lyric.timeline` —— 整首 `[[秒, 文本], …]`（一首歌 2–4KB，本机传无所谓）；
 - `play.playbackRate` 与 `at`（服务器读到这一帧的时刻）。
 
-页面拿到锚点（`progress` + `at` + 倍速）后，每 100ms 用 `progress + (now - at) × rate` 推算此刻唱到哪，
-再在时间轴上二分出行号。于是：
+页面拿到锚点（`progress` + `at` + 倍速）后，每一帧（`requestAnimationFrame`）用 `progress + (now - at) × rate`
+推算此刻唱到哪，再在时间轴上二分出行号。于是：
 
-- **换行不再等网络**：到点就换，误差只剩本机时钟精度；
+- **换行不再等网络**：到点就换，误差只剩一帧（以前用 100ms 定时器，最坏要等 100ms 才反应过来）；
 - **漂移会被自动纠正**：轮询每 200ms 刷新一次锚点（写在 `player.live` 里，不触发重渲染），
   所以拖动进度条、暂停、换歌之后的误差最多存在一个轮询周期；
-- **暂停时不跑定时器**，静止画面零开销。
+- **暂停时不跑帧循环**，静止画面零开销；标签页隐藏时 rAF 自己停，回到前台重算一次。
+
+换行那一刻的观感由三件事决定，缺一件就会「不丝滑」：
+
+1. **节点得真的重建**。槽位的 key 里必须带文本（`'slot:' + index + ':' + slot.text`）。只用位置当 key 时，
+   换行只是把同一个 DOM 节点的文本换掉，节点上一个属性都没变 —— 写在槽位上的 transition 一次也触发不了，看到的就是硬切。
+2. **当前句要定高两行**（`minHeight: 2.9em`）。歌词在 1 行 / 2 行之间来回换时整块高度不变，舞台不做垂直重排。
+3. **舞台居中要用量出来的像素位移**。`translateY(-50%)` 是百分比，计算值永远是同一个字符串，
+   高度变化只改「使用值」，transition 抓不到 —— 必须由 `useStageShift()` 量出真实高度写成 `translateY(-Npx)`
+   并过渡，行数变化时整条竖列才是滑过去的。
+
+入场动效：当前句从下方 9px 浮入（`lx-lyric-in`，240ms），上下文行只从更暗处提亮（`lx-lyric-near` / `lx-lyric-far`），
+不从全透明闪出；关键帧只写 `from`，`to` 用浏览器算出的内联 opacity，1 / 0.55 / 0.3 三档亮度因此不会被动画抹平。
+`prefers-reduced-motion: reduce` 时整套动画关掉。
 
 对应回归断言：`test/lrc.mjs` 查帧里有没有 `timeline` / `playbackRate`，`test/client-bundle.mjs` 用
-`plugin.__lxTest.indexAtTimeline` 直接验换行边界（未到首句 → -1、正好踩时间戳 → 该行、两行之间 → 前一行、末句之后 → 末行）。
+`plugin.__lxTest.indexAtTimeline` 直接验换行边界（未到首句 → -1、正好踩时间戳 → 该行、两行之间 → 前一行、末句之后 → 末行），
+并钉住上面三件事（key 带文本、当前句定高、rAF 调度）与三组关键帧 —— 回退任意一条都会红。
 
 ## 已知边界
 
@@ -212,3 +226,31 @@ New-Item -ItemType Junction -Path "$profileDir\node_modules\dsh-plugin-lx-music"
 读法：`controls.y + controls.h`（474）比 `lyrics.y`（488）小 → 胶囊在歌词**上面**；
 `controls.x + controls.w` 与 `lyrics.x + lyrics.w` 都是 1639 → 共用**同一条右边界**；
 整块 435…631 的中点是 533，正好是视口高度的一半 → 垂直居中。
+
+## 换行动效自检（`stage-shift` / `lyric-style`）
+
+动效是「代码对、页面没跑」的重灾区（keyframes 没注入、key 没换、`translateY(-50%)` 不参与过渡），
+所以这里也留了两个一次性自报，隔一层浏览器自己说出来：
+
+```
+{"stage":"stage-shift","motion":true,"shift":-112.6}
+
+{"stage":"lyric-style","index":56,"block":172,"rows":[
+  {"animation":"none","opacity":0.5,"minHeight":"auto","height":17},
+  {"animation":"lx-lyric-far","opacity":0.14,"minHeight":"auto","height":20},
+  {"animation":"lx-lyric-near","opacity":0.3,"minHeight":"auto","height":21},
+  {"animation":"lx-lyric-in","opacity":0.35,"minHeight":"58px","height":58},
+  {"animation":"lx-lyric-near","opacity":0.3,"minHeight":"auto","height":21},
+  {"animation":"lx-lyric-far","opacity":0.14,"minHeight":"auto","height":20}]}
+```
+
+读法：
+
+- `stage-shift.motion=true` 且 `shift` 是负的像素值 → 新 bundle 确实在页面里求值了，
+  居中走的是「量高度 → 写像素位移」这条路，不是 `translateY(-50%)`；
+- `lyric-style.rows` 里 `animation` 不是 `none` → 三张关键帧都真的被浏览器认下来了
+  （`getComputedStyle(node).animationName` 读的是生效值，不是源码里的字符串）；
+- 当前句 `minHeight: 58px` 且 `height: 58px`（20px × 1.45 × 2）→ 定高两行生效；
+- 各行的 `opacity` 报的是动画第一帧的值（`.35 / .3 / .14`），不是 0 —— 整块不会随换行暗一下；
+- `block` 在多次换行之间不变（本机实测一直是 172）→ 当前句换行不会带动整块重排。
+

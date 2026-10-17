@@ -225,6 +225,40 @@ check('越界槽是 empty', localSlots[0].role === 'empty' && localSlots[0].text
 check('下一句在右侧槽里', localSlots[3].text === 'c', JSON.stringify(localSlots[3]))
 check('舞台确实用本地推算取当前行', stageSource.includes('indexAtTimeline') && stageSource.includes('progressNow'))
 
+// ---- 回归：「歌词切换不丝滑」----
+// 之前槽位的 key 只有位置（slot-0..4），换行时 React 复用同一个节点、只改文本，
+// 节点上没有任何属性变化，写在槽位上的 transition 一次也触发不了 → 硬切。
+// 现在要求：key 带文本（换行即重建）、当前句挂入场动画、且当前句定高两行（不抖高度）。
+const motionCss = String(lxTest.motionCss || '')
+check('关键帧里有「从下方浮入」的一帧', motionCss.includes('@keyframes lx-lyric-in'), motionCss)
+check(
+  '入场不从全透明开始（否则每换个行整块歌词暗一下，是闪不是滑）',
+  motionCss.includes('lx-lyric-in{from{opacity:.35'),
+  motionCss,
+)
+check(
+  '上下文行只做提亮，不从全透明闪出',
+  motionCss.includes('@keyframes lx-lyric-near') && motionCss.includes('@keyframes lx-lyric-far'),
+  motionCss,
+)
+
+const curStyle = lxTest.slotStyle({ text: 'a', role: 'current', distance: 0 })
+const nearStyle = lxTest.slotStyle({ text: 'b', role: 'next', distance: 1 })
+const farStyle = lxTest.slotStyle({ text: 'c', role: 'next', distance: 2 })
+const emptyStyle = lxTest.slotStyle({ text: '', role: 'empty', distance: 2 })
+check('当前句是定高两行的框（1 行 / 2 行换行时整块高度不变）', curStyle.minHeight === '2.9em', String(curStyle.minHeight))
+check('当前句挂上了入场动画', String(curStyle.animation || '').includes('lx-lyric-in'), String(curStyle.animation))
+check('相邻行用 near 动画', String(nearStyle.animation || '').includes('lx-lyric-near'), String(nearStyle.animation))
+check('外圈行用 far 动画', String(farStyle.animation || '').includes('lx-lyric-far'), String(farStyle.animation))
+check('空槽不加动画', emptyStyle.animation === undefined, String(emptyStyle.animation))
+check('槽位 key 带文本（否则换行复用节点、动画永不触发）', stageSource.includes("'slot:' + index"), '没找到带文本的 key')
+check(
+  '换行按帧对齐（rAF 调度 + 取消，不是 100ms 定时器）',
+  stageSource.includes('requestAnimationFrame(frameLoop)') && stageSource.includes('cancelAnimationFrame(raf)'),
+  '没找到 rAF 调度/取消',
+)
+check('舞台居中用了量出来的像素位移（百分比位移不参与过渡）', stageSource.includes('stageStyle(shift)'), '没找到 stageStyle(shift)')
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' 项没过：')
