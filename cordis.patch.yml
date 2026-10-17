@@ -1,0 +1,9 @@
+# dsh-plugin-lx-music 的 bundle patch。
+#
+# 只往配置树里插一行宿主插件；浏览器半边由 package.json 里的 `dsh.client`
+# 声明，DSH 会把它扫描成浏览器插件并提供 /plugins/dsh-plugin-lx-music/client.js。
+
+- insert:
+    - id: dsh-plugin-lx-music
+      name: 'dsh-plugin-lx-music'
+# reload-probe
