@@ -71,12 +71,23 @@ expect('空歌词全空槽', lyricWindow([], 0, 2).every((s) => s.role === 'empt
 console.log('\ncreateLxApi:')
 let statusCalls = 0
 let lyricCalls = 0
-let currentStatus = { status: 'playing', name: '失眠', singer: 'Suki刘舒妤', albumName: 'Ladies Night', duration: 211.24, progress: 15 }
+let currentStatus = { status: 'playing', name: '失眠', singer: 'Suki刘舒妤', albumName: 'Ladies Night', duration: 211.24, progress: 15, playbackRate: 1 }
 
+/**
+ * 落雪 /status 严格按 ?filter=a,b,c 裁字段（真机验证：没列的字段真的不返回）。
+ * 这里的假落雪必须照着做，否则「STATUS_FILTER 漏了 playbackRate」这种回归
+ * 在测试里永远是绿的 —— 假接口会把整个 status 原样吐出来。
+ */
 const fakeFetch = async (url) => {
   if (url.includes('/status')) {
     statusCalls += 1
-    return { ok: true, text: async () => JSON.stringify(currentStatus) }
+    const filter = new URL(url).searchParams.get('filter')
+    const fields = filter ? filter.split(',').map((field) => field.trim()).filter(Boolean) : Object.keys(currentStatus)
+    const body = {}
+    for (const field of fields) {
+      if (Object.hasOwn(currentStatus, field)) body[field] = currentStatus[field]
+    }
+    return { ok: true, text: async () => JSON.stringify(body) }
   }
   if (url.includes('/lyric')) {
     lyricCalls += 1
@@ -119,6 +130,13 @@ currentStatus = { ...currentStatus, name: '别的歌', singer: '别的歌手' }
 clock += 1000
 await api.read()
 expect('换歌后重读 lyric', lyricCalls === 2, String(lyricCalls))
+
+// 回归：STATUS_FILTER 里漏了 playbackRate 时，假落雪会照章不回这个字段，
+// lx-api.js 就会退化成 1 —— 页面按 progress + (now-at)×rate 外推，倍速下会持续漂。
+currentStatus = { ...currentStatus, playbackRate: 1.5 }
+clock += 1000
+const fast = await api.read()
+expect('倍速原样带出，不被写死成 1', fast.play.playbackRate === 1.5, String(fast.play.playbackRate))
 
 console.log('\ncreateLxApi 降级:')
 const refused = async () => {
