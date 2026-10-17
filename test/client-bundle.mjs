@@ -210,6 +210,21 @@ const switchNode = row?.props?.children?.[1]
 check('开关是 role=switch 的按钮', switchNode?.type === 'button' && switchNode?.props?.role === 'switch', String(switchNode?.type))
 check('开关默认打开', switchNode?.props?.['aria-checked'] === 'true', String(switchNode?.props?.['aria-checked']))
 
+// ---- 本地推算：换行不再等轮询（这是「歌词有延迟」的根治点）----
+const lxTest = plugin.__lxTest
+check('暴露了 __lxTest', lxTest !== undefined && typeof lxTest.indexAtTimeline === 'function')
+const tl = [[10.5, 'a'], [20, 'b'], [30, 'c']]
+check('未到首句 → -1', lxTest.indexAtTimeline(tl, 3) === -1, String(lxTest.indexAtTimeline(tl, 3)))
+check('正好踩在时间戳上 → 该行', lxTest.indexAtTimeline(tl, 20) === 1, String(lxTest.indexAtTimeline(tl, 20)))
+check('两行之间 → 前一行', lxTest.indexAtTimeline(tl, 25.4) === 1, String(lxTest.indexAtTimeline(tl, 25.4)))
+check('最后一行之后 → 末行', lxTest.indexAtTimeline(tl, 99) === 2, String(lxTest.indexAtTimeline(tl, 99)))
+const localSlots = lxTest.slotsAtTimeline(tl, 1, 2)
+check('本地切片仍是 5 槽', localSlots.length === 5, String(localSlots.length))
+check('中间槽是 current', localSlots[2].role === 'current' && localSlots[2].text === 'b', JSON.stringify(localSlots[2]))
+check('越界槽是 empty', localSlots[0].role === 'empty' && localSlots[0].text === '', JSON.stringify(localSlots[0]))
+check('下一句在右侧槽里', localSlots[3].text === 'c', JSON.stringify(localSlots[3]))
+check('舞台确实用本地推算取当前行', stageSource.includes('indexAtTimeline') && stageSource.includes('progressNow'))
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' 项没过：')

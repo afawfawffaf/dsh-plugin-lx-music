@@ -93,6 +93,14 @@ expect('api.enabled 为 true', first.api.enabled === true)
 expect('带出了歌名', first.song.name === '失眠')
 expect('当前行是第二句（15s）', first.lyric.line === '这个失眠夜 想不起你是谁', first.lyric.line)
 expect('切出了 5 个槽位', first.lyric.slots.length === 5)
+expect('带上了整首时间轴', Array.isArray(first.lyric.timeline) && first.lyric.timeline.length === first.lyric.total, String(first.lyric.timeline?.length))
+expect(
+  '时间轴每项是 [秒, 文本]',
+  Array.isArray(first.lyric.timeline[0]) && typeof first.lyric.timeline[0][0] === 'number' && typeof first.lyric.timeline[0][1] === 'string',
+  JSON.stringify(first.lyric.timeline[0]),
+)
+expect('时间轴按时间递增', first.lyric.timeline.every((row, i, arr) => i === 0 || row[0] >= arr[i - 1][0]))
+expect('带上了播放倍速', first.play.playbackRate === 1, String(first.play.playbackRate))
 expect('首次读了 status 和 lyric', statusCalls === 1 && lyricCalls === 1, `${statusCalls}/${lyricCalls}`)
 
 clock += 100

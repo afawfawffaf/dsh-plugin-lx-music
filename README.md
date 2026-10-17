@@ -1,4 +1,4 @@
-﻿# dsh-plugin-lx-music（落雪音乐 · 内嵌歌词 + 播放控制）
+# dsh-plugin-lx-music（落雪音乐 · 内嵌歌词 + 播放控制）
 
 [github.com/afawfawffaf/dsh-plugin-lx-music](https://github.com/afawfawffaf/dsh-plugin-lx-music) · MIT · 仅 Windows
 
@@ -127,6 +127,33 @@ New-Item -ItemType Junction -Path "$profileDir\node_modules\dsh-plugin-lx-music"
 - `dsh.profile.bundles` 数组里加 `"dsh-plugin-lx-music"`
 
 装完**重启 DSH**（宿主半边是 Node 进程，热更不生效）；浏览器半边刷新页面即可。
+
+## 歌词为什么不再有延迟
+
+老链路是「页面问宿主，宿主问落雪」，三道缓冲叠在一起，最坏要等 1.2 秒才换行：
+
+| 环节 | 改前 | 改后 |
+| --- | --- | --- |
+| 页面轮询 `/lx-music/lyric` | 500ms | 200ms（只刷新锚点，不负责换行） |
+| 宿主缓存（合流用） | 700ms | 120ms |
+| 换行时刻由谁决定 | 服务器算好的 `index` | **页面按本机时钟自己算** |
+| 换行过渡动画 | 300ms | 180ms |
+
+现在 `/lx-music/lyric` 每帧多带两样东西：
+
+- `lyric.timeline` —— 整首 `[[秒, 文本], …]`（一首歌 2–4KB，本机传无所谓）；
+- `play.playbackRate` 与 `at`（服务器读到这一帧的时刻）。
+
+页面拿到锚点（`progress` + `at` + 倍速）后，每 100ms 用 `progress + (now - at) × rate` 推算此刻唱到哪，
+再在时间轴上二分出行号。于是：
+
+- **换行不再等网络**：到点就换，误差只剩本机时钟精度；
+- **漂移会被自动纠正**：轮询每 200ms 刷新一次锚点（写在 `player.live` 里，不触发重渲染），
+  所以拖动进度条、暂停、换歌之后的误差最多存在一个轮询周期；
+- **暂停时不跑定时器**，静止画面零开销。
+
+对应回归断言：`test/lrc.mjs` 查帧里有没有 `timeline` / `playbackRate`，`test/client-bundle.mjs` 用
+`plugin.__lxTest.indexAtTimeline` 直接验换行边界（未到首句 → -1、正好踩时间戳 → 该行、两行之间 → 前一行、末句之后 → 末行）。
 
 ## 已知边界
 
