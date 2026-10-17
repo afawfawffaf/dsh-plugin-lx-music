@@ -102,7 +102,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File lib\lx-music.ps1 -Mode s
 | 方式 | 发什么 | 对方怎么装 |
 | --- | --- | --- |
 | npm | 包名 `dsh-plugin-lx-music` | 插件页填包名；或 `dsh plugin --profile desktop add dsh-plugin-lx-music` |
-| git 仓库 | 仓库地址 | 插件页填 `https://github.com/<你>/dsh-plugin-lx-music` |
+| git 仓库 | 仓库地址 | 插件页填 `https://github.com/afawfawffaf/dsh-plugin-lx-music` |
 | 压缩包 | `npm pack` 出来的 `.tgz` | 插件页填 tgz 绝对路径；或 `dsh plugin --profile desktop add E:\path\to.tgz` |
 | 目录 | 整个 `dsh-plugin-lx-music` 目录 | 插件页填目录绝对路径（等价于本机 dev 的 link） |
 
