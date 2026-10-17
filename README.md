@@ -172,6 +172,10 @@ New-Item -ItemType Junction -Path "$profileDir\node_modules\dsh-plugin-lx-music"
 - 浏览器半边：bundle 按 `rev`（mtime/ctime/size 指纹）取 URL，文件一改就换新 URL，**刷新页面即可生效**；`/plugins/events` 的 SSE 会推 `graph` / `rebuilt` 帧。
 - `package.json` 的 `dsh.client.inject` 列的是「先加载哪些客户端包」，宿主把它缓存在 `pkgMeta` 这个 Map 里且**没有失效逻辑** —— 改了也必须重启。列的 id 不存在时会被静默忽略，不会导致加载失败。
 - 浏览器侧的失败不会冒到宿主：`clientModules` 把每条 `{id, message}` 留在页面内的 `snapshot.failures` 里 —— 所以本插件自带 `/lx-music/client-report` 自报通道。
+- **`package.json` 前面多一个 UTF-8 BOM，插件就彻底不加载**：`dsh-app-boot` 的 `loadProfileDirectory` 用 `JSON.parse` 读每个 bundle 的 package.json，带 BOM 直接抛 `SyntaxError: Unexpected token ''`；而这类失败**只进 `skippedBundles`，不打印、不进客户端图、路由也不注册**。表现是「装了、链接在、依赖在，但 `/lx-music/*` 一律 404，重启多少次都一样，日志里一个字都没有」。
+  判据：`[System.IO.File]::ReadAllBytes('package.json')[0]` 应该是 `0x7b`（`{`），不是 `0xef`（BOM 首字节）。
+  根治：用 `JSON.parse` + `JSON.stringify` 重写文件（Node 写出的 UTF-8 不带 BOM），别用 Windows PowerShell 5.1 的 `Set-Content -Encoding UTF8`（默认加 BOM）。
+  `test/no-bom.mjs` 把这条钉成了回归断言 —— 这种失败静默到只能靠字节检查抓。
 
 ## 按钮为什么曾经「渲染了但看不见」
 
