@@ -4,6 +4,7 @@
 
   Modes
     state  : report only (installed / running / lyric windows / visibility)
+    launch : start LX Music if it is not running, and report what happened
     toggle : hide the lyric overlay when any of it is visible, show it otherwise
     show   : make sure the lyric overlay is visible (idempotent)
     hide   : make sure the lyric overlay is hidden (idempotent)
@@ -28,7 +29,7 @@
   so every registry read below goes through the .NET Registry API instead.
 #>
 param(
-  [ValidateSet('state', 'toggle', 'show', 'hide')]
+  [ValidateSet('state', 'launch', 'toggle', 'show', 'hide')]
   [string]$Mode = 'toggle',
   [string]$ExePath = ''
 )
@@ -208,6 +209,31 @@ function Get-LxProcesses {
   return $found
 }
 
+# ------------------------------------------------------------- start the app ---
+
+# DSH is itself an Electron app, and the shell it hands us may carry
+# ELECTRON_RUN_AS_NODE=1 (node mode). That variable turns *every* Electron binary
+# into a headless Node process: LX Music then starts, runs no main script, and
+# exits 0 in well under a second -- which reads exactly like "the app refuses to
+# open" (no log line, no crash event, empty process list). Strip it for the child
+# only and put it back afterwards so this script's own environment is untouched.
+function Start-LxPlayer {
+  param([string]$Exe)
+  $hadVar = Test-Path Env:ELECTRON_RUN_AS_NODE
+  $saved = $env:ELECTRON_RUN_AS_NODE
+  try {
+    Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+    # -hidden is LX Music's own switch (src/main/app.ts): the main window is built
+    # but never shown ("ready-to-show" skips showWindow), and applyInitSetting
+    # turns the tray icon on if it was off, so there is always a way back to the
+    # window. -WindowStyle Minimized does NOT do this: Electron shows the window
+    # itself right after ready-to-show, so the window still flashes up.
+    return (Start-Process -FilePath $Exe -WorkingDirectory (Split-Path -Parent $Exe) -ArgumentList '-hidden' -PassThru -ErrorAction Stop)
+  } finally {
+    if ($hadVar) { $env:ELECTRON_RUN_AS_NODE = $saved }
+  }
+}
+
 # ---------------------------------------------------------------- windows ----
 
 function Get-ProcessWindows {
@@ -350,6 +376,61 @@ if ($Mode -eq 'state') {
   exit 0
 }
 
+# launch: nothing else. The caller (lib/index.js) owns the "is the API awake yet"
+# question, because that is an HTTP question and PowerShell is the wrong place for it.
+if ($Mode -eq 'launch') {
+  if ($null -ne $main) {
+    # Already up. Starting the exe again would just exit immediately.
+    Write-Result @{
+      ok      = $true
+      action  = 'already-running'
+      running = $true
+      pid     = [int]$main.Id
+      exe     = $exe
+    }
+    exit 0
+  }
+  if ($null -eq $exe) {
+    Write-Result @{
+      ok       = $false
+      code     = 'NOT_FOUND'
+      searched = @($searchPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+    exit 2
+  }
+  try {
+    $started = Start-LxPlayer $exe
+  } catch {
+    Write-Result @{
+      ok      = $false
+      code    = 'LAUNCH_FAILED'
+      message = [string]$_.Exception.Message
+      exe     = $exe
+    }
+    exit 3
+  }
+
+  # Give the process a moment to exist before reporting: right after
+  # Start-Process the child is there but Electron has not initialized yet.
+  $deadline = (Get-Date).AddSeconds(8)
+  $alive = @()
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 200
+    $alive = @(Get-LxProcesses $searchPaths)
+    if ($alive.Count -gt 0) { break }
+    if ($started.HasExited) { break }
+  }
+  Write-Result @{
+    ok      = $true
+    action  = 'launched'
+    running = ($alive.Count -gt 0)
+    pid     = [int]$started.Id
+    exited  = [bool]$started.HasExited
+    exe     = $exe
+  }
+  exit 0
+}
+
 # show / hide / toggle: launch first when nothing is running, then apply.
 if ($Mode -eq 'show') { $wanted = $true }
 elseif ($Mode -eq 'hide') { $wanted = $false }
@@ -365,7 +446,7 @@ if ($null -eq $main) {
     exit 2
   }
   try {
-    $started = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+    $started = Start-LxPlayer $exe
   } catch {
     Write-Result @{ ok = $false; code = 'LAUNCH_FAILED'; message = [string]$_.Exception.Message; exe = $exe }
     exit 3
