@@ -259,6 +259,35 @@ check(
 )
 check('舞台居中用了量出来的像素位移（百分比位移不参与过渡）', stageSource.includes('stageStyle(shift)'), '没找到 stageStyle(shift)')
 
+// ---- 回归：「点播放但落雪没开」要顺手拉起播放器 ----
+// 拉起可能要几秒，所以点下去先给一句提示；并且把「我想让它播」带上，
+// 免得播放器起来时本来就是播放态，重放的那次 toggle 反而把歌关掉。
+check(
+  '控制请求会带上想去的状态',
+  source.includes('const postControl = (action, desired)') && source.includes('{ action, desired }'),
+  '没找到 desired 透传',
+)
+check(
+  '点播放时把 intended 状态一起发出去',
+  stageSource.includes("postControl(action, nextPlaying === undefined"),
+  '没找到 postControl(action, desired)',
+)
+check(
+  '还没有任何数据（播放器没开）时先提示一句再发请求',
+  stageSource.includes("if (frame === null) emit({ title: t('launchTitle')"),
+  '没找到拉起前的提示',
+)
+check(
+  '中英文都备了「正在打开」的文案',
+  source.includes("launchTitle: '正在打开落雪音乐'") && source.includes("launchTitle: 'Starting LX Music'"),
+  '文案缺一种语言',
+)
+check(
+  '「拉起来了但 API 没开」有专门的说法',
+  source.includes("code === 'API_OFFLINE_AFTER_LAUNCH'"), '没找到 API_OFFLINE_AFTER_LAUNCH 分支',
+)
+
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' 项没过：')

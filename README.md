@@ -51,7 +51,7 @@ test/client-bundle.mjs 离线：桩 __ModuleLoader__ 执行 bundle，验 4 个�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/lx-music/lyric` | 一帧歌词：`{ ok, api, song, play, lyric:{ index, total, line, slots[5] } }` |
-| POST | `/lx-music/control` | body `{ "action": "prev" \| "next" \| "toggle" }`，走落雪 API 放上一首/下一首/播放暂停 |
+| POST | `/lx-music/control` | body `{ "action": "prev" \| "next" \| "toggle", "desired"?: "playing" \| "paused" }`，走落雪 API 放上一首/下一首/播放暂停；**播放器没开时先把播放器拉起来再重放这次点击** |
 | POST | `/lx-music/lyrics` | body `{ "visible": true\|false }`，设置桌面歌词窗显隐（幂等） |
 | GET | `/lx-music/lyrics` | 只读状态：`{ ok, installed, running, exe, pid, windows, visible, title }` |
 | POST | `/lx-music/lyrics/toggle` | 兼容旧页面：翻转桌面歌词窗 |
@@ -69,14 +69,44 @@ test/client-bundle.mjs 离线：桩 __ModuleLoader__ 执行 bundle，验 4 个�
 
 页面永远只跟同源的 `/lx-music/*` 说话，不跨域直连落雪：避开 CORS，也不把 23330 暴露给页面。
 
+## 播放器没开时，点一下播放键就自己拉起来
+
+点播放/上一首/下一首时，`POST /lx-music/control` 先照常打落雪 API；如果连不上（`API_OFFLINE`），
+宿主会做三件事：
+
+1. 跑 `lx-music.ps1 -Mode launch`：找到 `lx-music-desktop.exe` 就带 `-hidden` 启动 —— 窗口不弹出来，直接以系统托盘常驻（托盘图标若本来是关的，落雪会自己把它打开，所以随时能点回来），已经在跑则只回报 `already-running`；
+2. 每 250ms 探一次开放 API，最多等 15 秒（实测启动到 API 可用 <1.4 秒）；
+3. 等到了就把这次点击**重放**一遍，回包带上 `launched: true`。
+
+三个坑，都写进代码注释了，别改回去：
+
+- **`ELECTRON_RUN_AS_NODE`**：DSH 自己就是 Electron，它启动的子进程会带着 `ELECTRON_RUN_AS_NODE=1`。
+  这个变量会让**任何** Electron 程序以无界面 Node 的身份运行 —— 落雪起来后不执行主进程，一秒内 `exit 0`，
+  日志里连 `App starting...` 都没有，看起来像「播放器打不开」。`lx-music.ps1` 里的 `Start-LxPlayer`
+  在启动子进程前临时把这个变量摘掉，启动完再放回去。
+- **`-WindowStyle Minimized` 不够**：Electron 在 `ready-to-show` 里自己调 `showWindow()`，窗口照样弹出来。
+  落雪自己有 `-hidden` 开关（`src/main/app.ts` 里 `cmdParams.hidden`：跳过 `showWindow()`，并在
+  `applyInitSetting` 里把 `tray.enable` 打开），用它才是真的「后台起来、只在托盘」。
+- **别把「想让它播」变成「把它关掉」**：播放器启动时可能自己恢复成播放态，这时重放的 `toggle`
+  会反过来暂停。所以控制请求可以带 `desired: "playing" | "paused"`，重放前先比对当前状态，
+  已经是用户要的状态就直接返回 `settled: true`，不发请求。
+
+走不通时按结果分派：程序找不到 404 `NOT_FOUND`；启动被系统挡下 409 `LAUNCH_FAILED`；
+拉起来了但开放 API 一直不答话 503 `API_OFFLINE_AFTER_LAUNCH`（提示去落雪里开开放 API）。
+
 ## 自测
 
 ```powershell
 cd E:\deepseek\dsh-plugin-lx-music
 node test/lrc.mjs
+node test/control-route.mjs
 node test/host-routes.mjs
 node test/client-bundle.mjs
 ```
+
+`control-route.mjs` 起一个假的落雪开放 API，用真 HTTP 打一遍控制路由 —— 包括「点了播放但落雪没开」：
+拉起播放器那一步被换成了假的（`__hostTest.setLauncher`），只把假 API 重新开在同一个端口，
+所以 `npm test` **不会**真的启动你的播放器。
 
 `host-routes.mjs` 会真的调用 PowerShell 把桌面歌词藏起来再放回来，跑完屏幕上应该跟跑之前一样。
 它默认**不动播放器**；想真点一次上一首/下一首/暂停，加环境变量：
@@ -89,9 +119,12 @@ $env:LX_TEST_CONTROL = '1'; node test/host-routes.mjs   # 会暂停再恢复
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File lib\lx-music.ps1 -Mode state
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File lib\lx-music.ps1 -Mode launch
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File lib\lx-music.ps1 -Mode hide
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File lib\lx-music.ps1 -Mode show
 ```
+
+`-Mode launch` 只在播放器没在跑的时候才会真的启动它（已经在跑就只回报 `already-running`）。
 
 输出是一行 `LXMUSIC_JSON:{...}`；`hide`/`show` 是幂等的（本来就藏/本来就显示时不重复操作）。
 

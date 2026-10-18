@@ -5,6 +5,7 @@
  *   node test/control-route.mjs
  */
 import http from 'node:http'
+import { readFileSync } from 'node:fs'
 
 const failures = []
 const expect = (label, condition, detail) => {
@@ -49,7 +50,7 @@ const fakeBase = `http://127.0.0.1:${fakeLx.address().port}`
 
 // 宿主半边在模块加载时读这个环境变量，所以必须先设好再 import。
 process.env.LX_MUSIC_API = fakeBase
-const { apply } = await import('../lib/index.js')
+const { apply, __hostTest } = await import('../lib/index.js')
 
 const routes = []
 const cleanups = []
@@ -85,11 +86,11 @@ const host = http.createServer((req, res) => {
 await new Promise((resolve) => host.listen(0, '127.0.0.1', resolve))
 const base = `http://127.0.0.1:${host.address().port}`
 
-const post = (action) =>
+const post = (action, desired) =>
   fetch(`${base}/lx-music/control`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify(desired ? { action, desired } : { action }),
   })
 
 console.log('lyric（假落雪）:')
@@ -126,6 +127,91 @@ console.log('  →', offlineResponse.status, JSON.stringify(offline))
 expect('掉线返回 503', offlineResponse.status === 503)
 expect('掉线码是 API_OFFLINE', offline.code === 'API_OFFLINE', String(offline.code))
 expect('掉线也带一句人话', typeof offline.hint === 'string' && offline.hint.length > 0)
+
+// ---- 「点了播放但落雪没开」：宿主该自己把播放器拉起来，再重放这次点击 ----
+// 拉起播放器换成假的：只把假落雪重新开在同一个端口。绝不能真去启动播放器。
+const fakePort = Number(new URL(fakeBase).port)
+const revive = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await new Promise((resolve) => fakeLx.listen(fakePort, '127.0.0.1', resolve))
+  return { ok: true, action: 'launched', running: true, pid: 4242 }
+}
+let launchCalls = 0
+
+console.log('\n没开播时点播放（自动拉起）:')
+__hostTest.setLauncher(async () => {
+  launchCalls += 1
+  return revive()
+})
+playStatus = 'paused'
+controlHits.length = 0
+const wokeResponse = await post('toggle', 'playing')
+const wokeBody = await wokeResponse.json()
+console.log('  →', wokeResponse.status, JSON.stringify(wokeBody))
+expect('拉起后这次点击是 200', wokeResponse.status === 200, String(wokeResponse.status))
+expect('回包带上 launched', wokeBody.launched === true, JSON.stringify(wokeBody))
+expect('拉起后重放了这次点击（暂停态 → /play）', controlHits.join(',') === '/play', controlHits.join(','))
+
+console.log('\n连点两下:')
+await new Promise((resolve) => fakeLx.close(resolve))
+launchCalls = 0
+playStatus = 'paused'
+controlHits.length = 0
+const [wokeA, wokeB] = await Promise.all([post('toggle', 'playing'), post('toggle', 'playing')])
+expect('两个请求都成功', wokeA.status === 200 && wokeB.status === 200, `${wokeA.status}/${wokeB.status}`)
+expect('只拉起一次播放器', launchCalls === 1, String(launchCalls))
+expect('两次都只是「播」，没有一下把歌暂停掉', controlHits.every((hit) => hit === '/play'), controlHits.join(','))
+
+console.log('\n播放器自己已经恢复播放:')
+await new Promise((resolve) => fakeLx.close(resolve))
+playStatus = 'playing'
+controlHits.length = 0
+const settledResponse = await post('toggle', 'playing')
+const settledBody = await settledResponse.json()
+console.log('  →', settledResponse.status, JSON.stringify(settledBody))
+expect('识别出「已经在播」，不反过来暂停', settledBody.settled === true, JSON.stringify(settledBody))
+expect('没有多打一次控制请求', controlHits.length === 0, controlHits.join(','))
+
+console.log('\n进程在跑、只是 API 没开:')
+await new Promise((resolve) => fakeLx.close(resolve))
+__hostTest.setLauncher(async () => ({ ok: true, action: 'already-running', running: true, pid: 1 }))
+const runningResponse = await post('toggle')
+const runningBody = await runningResponse.json()
+console.log('  →', runningResponse.status, JSON.stringify(runningBody))
+expect('进程在跑就别再说「已拉起」', runningBody.launched === undefined, JSON.stringify(runningBody))
+expect('仍按 API_OFFLINE 报 503', runningResponse.status === 503 && runningBody.code === 'API_OFFLINE', `${runningResponse.status} ${runningBody.code}`)
+
+console.log('\n连播放器都找不到:')
+__hostTest.setLauncher(async () => ({ ok: false, code: 'NOT_FOUND' }))
+const missingResponse = await post('toggle')
+const missingBody = await missingResponse.json()
+console.log('  →', missingResponse.status, JSON.stringify(missingBody))
+expect('找不到程序报 404', missingResponse.status === 404, String(missingResponse.status))
+expect('码是 NOT_FOUND', missingBody.code === 'NOT_FOUND', String(missingBody.code))
+
+__hostTest.setLauncher(null)
+
+// 静态守卫：拉起播放器时必须把 DSH 自己带进来的 ELECTRON_RUN_AS_NODE 摘掉。
+// 带着它，落雪会当成 Node 跑、一秒内 exit 0，日志里什么都不留 —— 遇到过就知道了。
+console.log('\n脚本本体:')
+const scriptSource = readFileSync(new URL('../lib/lx-music.ps1', import.meta.url), 'utf8')
+expect(
+  '启动前摘掉 ELECTRON_RUN_AS_NODE',
+  scriptSource.includes('Remove-Item Env:ELECTRON_RUN_AS_NODE'),
+  '没找到摘变量的那行',
+)
+expect(
+  '只对子进程摘、脚本自己环境还原',
+  scriptSource.includes('if ($hadVar) { $env:ELECTRON_RUN_AS_NODE = $saved }'),
+  '没找到还原那行',
+)
+const startLine = scriptSource.split('\n').find((line) => line.includes('Start-Process -FilePath $Exe')) || ''
+expect(
+  '用落雪自己的 -hidden 启动（-WindowStyle Minimized 不管用，窗口照样会弹出来）',
+  startLine.includes("-ArgumentList '-hidden'") && !startLine.includes('-WindowStyle'),
+  startLine.trim() || '没找到 Start-Process 那行',
+)
+expect('launch 模式进了 ValidateSet', /ValidateSet\('state', 'launch'/.test(scriptSource), '没找到 launch 模式')
 
 host.close()
 for (const cleanup of cleanups) cleanup()
