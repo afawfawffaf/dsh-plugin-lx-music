@@ -140,11 +140,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File lib\lx-music.ps1 -Mode s
 
 ## 分享给别人
 
-这是个标准 npm 包（`package.json` 里带 `dsh.bundle.patch` 与 `dsh.client`），DSH 的「插件」管理页支持四种来源，按你方便的选：
+这是个标准 npm 包（`package.json` 里带 `dsh.bundle.patch` 与 `dsh.client`），DSH 的「插件」管理页支持几种来源，按你方便的选。**目前只发在 GitHub 上，npm 上还没发布**，所以没有「填包名」这一种：
 
 | 方式 | 发什么 | 对方怎么装 |
 | --- | --- | --- |
-| npm | 包名 `dsh-plugin-lx-music` | 插件页填包名；或 `dsh plugin add dsh-plugin-lx-music` |
 | git 仓库 | 仓库地址 | 插件页填 `https://github.com/afawfawffaf/dsh-plugin-lx-music`；或 `dsh plugin add afawfawffaf/dsh-plugin-lx-music` |
 | 压缩包 | `npm pack` 出来的 `.tgz` | 插件页填 tgz 绝对路径；或 `dsh plugin add E:\path\to.tgz` |
 | 目录 | 整个 `dsh-plugin-lx-music` 目录 | 插件页填目录绝对路径（等价于本机 dev 的 link） |
