@@ -10,6 +10,16 @@
 （`127.0.0.1:23330`）做三件事：读当前歌词、发 `/play` `/pause` `/skip-next` `/skip-prev`，
 外加一点窗口显隐操作。
 
+装（任选其一）：
+
+```bash
+dsh plugin add afawfawffaf/dsh-plugin-lx-music
+```
+
+桌面端也可以在 DSH 的「插件 → 添加插件」里粘贴仓库地址
+`https://github.com/afawfawffaf/dsh-plugin-lx-music`（桌面 profile 由 Electron 管理，
+CLI 的 `--profile desktop` 会被拒，这是 DSH 的既定行为，不是本插件的问题）。
+
 ## 为什么有这个东西
 
 桌面歌词是落雪自己的**置顶透明浮窗**，浮在所有窗口之上，写代码时挡视线、抢位置。
@@ -134,9 +144,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File lib\lx-music.ps1 -Mode s
 
 | 方式 | 发什么 | 对方怎么装 |
 | --- | --- | --- |
-| npm | 包名 `dsh-plugin-lx-music` | 插件页填包名；或 `dsh plugin --profile desktop add dsh-plugin-lx-music` |
-| git 仓库 | 仓库地址 | 插件页填 `https://github.com/afawfawffaf/dsh-plugin-lx-music` |
-| 压缩包 | `npm pack` 出来的 `.tgz` | 插件页填 tgz 绝对路径；或 `dsh plugin --profile desktop add E:\path\to.tgz` |
+| npm | 包名 `dsh-plugin-lx-music` | 插件页填包名；或 `dsh plugin add dsh-plugin-lx-music` |
+| git 仓库 | 仓库地址 | 插件页填 `https://github.com/afawfawffaf/dsh-plugin-lx-music`；或 `dsh plugin add afawfawffaf/dsh-plugin-lx-music` |
+| 压缩包 | `npm pack` 出来的 `.tgz` | 插件页填 tgz 绝对路径；或 `dsh plugin add E:\path\to.tgz` |
 | 目录 | 整个 `dsh-plugin-lx-music` 目录 | 插件页填目录绝对路径（等价于本机 dev 的 link） |
 
 装的时候插件管理器会自己把包名补进 `dsh.profile.bundles`，**不用手改** profile 的 `package.json`。
