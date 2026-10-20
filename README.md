@@ -226,7 +226,9 @@ event.preventDefault()
 list.scrollTop += event.deltaY
 ```
 
-只有指针真的在歌词框里才 `preventDefault`，框外的滚轮照常滚对话。滚动开始后记一个 2 秒的
+只有指针真的在歌词框里才 `preventDefault`，框外的滚轮照常滚对话。一格滚轮走一行：
+Chromium 一格 `deltaY` ≈ 100px，而一行歌词 ≈ 22px，直接加会一格跳五行，所以按 `deltaMode`
+换算成像素后再乘 `BROWSE_WHEEL = 0.25`（触控板那种“很多小的 delta”仍然等比缩放）。滚动开始后记一个 2 秒的
 空闲计时器，到点 `scrollTo({ top, behavior: 'smooth' })` 把正在唱的那句滑回视口正中
 （锚点是当前句节点上的 `data-lx-current`）。用户正在翻的时候，换行不会抢他的滚动位置 ——
 `useLyricBrowse(localIndex)` 的回位只在没在浏览时执行。
