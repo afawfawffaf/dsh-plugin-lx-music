@@ -344,21 +344,58 @@ check(
 )
 check(
   '采样器在 apply 里起一次（不是每个组件各起一个）',
-  source.includes('ensurePageScopeWatch()') && source.includes('const PAGE_SCOPE_MS = 400'),
+  source.includes('ensurePageScopeWatch()') && source.includes('const PAGE_SCOPE_MS = 1000'),
   '没找到 apply 里的采样器',
 )
 check(
   '发现被挤窄就立刻收起（不等第二次采样，否则观感上慢半拍）',
-  source.includes('if (narrowed) return { onChat: false, hit: null }'),
+  source.includes('if (narrowed) return { onChat: false, hit: null, narrowed }'),
   '挤窄判据还在等第二次采样',
 )
 check(
+  '边沿触发：只有挤窄状态翻转的那一拍才动作',
+  source.includes('const flipped = next.narrowed !== pageScope.narrowed') &&
+    source.includes('if (flipped && !full) {'),
+  '采样器还是每拍都动作，不是只认翻转',
+)
+check(
   '挤窄靠 ResizeObserver 立即重采样（轮询只是兜底）',
-  source.includes('const watchSeat = () => {') &&
-    source.includes('const observer = new ResizeObserver(() => sample())') &&
-    source.includes('observer.observe(seat)') &&
+  source.includes('new ResizeObserver(() => {') &&
+    source.includes('scheduleCheap()') &&
+    source.includes('scheduleSettle()') &&
+    source.includes('observer.observe(node)') &&
     source.includes('watchSeat()'),
   '没有在输入框上挂 ResizeObserver',
+)
+check(
+  '盯的是按钮上面几层的外框（按钮自己尺寸不变，只看它等于看不见挤窄）',
+  source.includes('for (let depth = 0; node && depth < 6; depth += 1)') &&
+    source.includes('pageScope.seatWatched = watched'),
+  '只盯了按钮本身，分栏挤窄会漏掉',
+)
+check(
+  '完整采样用尾随防抖（拖动时不跑、松手 120ms 后定案）',
+  source.includes('if (settleTimer !== null) clearTimeout(settleTimer)') &&
+    source.includes('const scheduleSettle = (delay = 120) => {'),
+  '完整采样还是「一次就锁死」，拖动中会跑',
+)
+check(
+  '点一下之后补一次完整采样（抽屉是点出来的，别等轮询）',
+  source.includes("window.addEventListener('pointerup', () => scheduleSettle(), true)"),
+  '没有点击触发的即时采样',
+)
+check(
+  '拖分栏时每帧只量几何，不做命中测试（否则挤窄会一卡一卡）',
+  source.includes('function probeOnChat(full = true)') &&
+    source.includes('if (!full) return { onChat: pageScope.onChat, hit: null, narrowed }') &&
+    source.includes('const sample = (full = true) => {') &&
+    source.includes('sample(false)'),
+  '廉价采样没接上，拖动时还在做完整命中测试',
+)
+check(
+  '面板判据用采样缓存的座位矩形（不再每层祖先各查一次 DOM）',
+  source.includes('let box = pageScope.seatBox'),
+  'panelish 还在自己查输入框',
 )
 check(
   '没有 document 的环境不自起定时器（否则离线自测会被吊住）',
