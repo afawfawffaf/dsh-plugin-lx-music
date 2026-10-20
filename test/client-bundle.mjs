@@ -326,6 +326,19 @@ check(
   '逐字着色没有接在帧循环上',
 )
 
+// ---- 按字长加权：别让 `extraordinary` 和「的」一样长 ----
+check('中文一个字算一拍', lxTest.unitWeight('心') === 1, String(lxTest.unitWeight('心')))
+check('英文一个词按字母数', lxTest.unitWeight('Tell') === 4, String(lxTest.unitWeight('Tell')))
+check('空格不占时间', lxTest.unitWeight(' ') === 0, String(lxTest.unitWeight(' ')))
+check('标点停半拍', lxTest.unitWeight('，') === 0.5, String(lxTest.unitWeight('，')))
+check('长单词真的比短单词占得多', lxTest.unitWeight('extraordinary') === 13, String(lxTest.unitWeight('extraordinary')))
+check(
+  '推进按累计权重算（不是按第几个字）',
+  source.includes('sum += unitWeight(node ? node.textContent : \'\')') &&
+    source.includes('while (lit < total && cumulative[lit] <= reached) lit += 1'),
+  '还在按字数均分',
+)
+
 // ---- 回归：「点播放但落雪没开」要顺手拉起播放器 ----
 // 拉起可能要几秒，所以点下去先给一句提示；并且把「我想让它播」带上，
 // 免得播放器起来时本来就是播放态，重放的那次 toggle 反而把歌关掉。
