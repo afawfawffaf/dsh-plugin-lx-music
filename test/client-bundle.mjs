@@ -271,6 +271,11 @@ check(
   '没有自动回位',
 )
 check(
+  '回位位置用矩形差算（offsetTop 相对的是定位祖先，会滑到最底部）',
+  source.includes('rowBox.top - listBox.top + list.scrollTop') && !source.includes('Math.round(row.offsetTop'),
+  '还在用 offsetTop 定位',
+)
+check(
   '滚轮按坐标截（舞台 pointerEvents: none，收不到 native 滚动）',
   source.includes("window.addEventListener('wheel', onWheel, { passive: false, capture: true })") &&
     source.includes('event.clientX < box.left'),
