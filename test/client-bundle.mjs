@@ -381,8 +381,20 @@ check(
 )
 check(
   '点一下之后补一次完整采样（抽屉是点出来的，别等轮询）',
-  source.includes("window.addEventListener('pointerup', () => scheduleSettle(), true)"),
+  source.includes("window.addEventListener('pointerup', () => { burst(500); scheduleSettle() }, true)"),
   '没有点击触发的即时采样',
+)
+check(
+  '交互期间按帧补量（不把「什么时候挤窄」全押在 ResizeObserver 上）',
+  source.includes('const burst = (ms = 400) => {') &&
+    source.includes("window.addEventListener('pointerdown', () => { burst(500); scheduleSettle() }, true)") &&
+    source.includes('if (event.buttons !== 0) burst(200)'),
+  '交互后没有按帧补量，窄面板要等轮询才发现',
+)
+check(
+  '挤窄阈值 40px（定 80 时窄面板一个都判不出来）',
+  source.includes('narrowed = pageScope.baseRight - right > 40'),
+  '阈值还是 80',
 )
 check(
   '拖分栏时每帧只量几何，不做命中测试（否则挤窄会一卡一卡）',
