@@ -231,9 +231,19 @@ Chromium 一格 `deltaY` ≈ 100px，而一行歌词 ≈ 22px，直接加会一�
 换算成像素后再乘 `BROWSE_WHEEL = 0.25`（触控板那种“很多小的 delta”仍然等比缩放）。滚动开始后记一个 2 秒的
 空闲计时器，到点 `scrollTo({ top, behavior: 'smooth' })` 把正在唱的那句滑回视口正中
 （锚点是当前句节点上的 `data-lx-current`）。用户正在翻的时候，换行不会抢他的滚动位置 ——
-`useLyricBrowse(localIndex)` 的回位只在没在浏览时执行。
+`useLyricBrowse(localIndex, onSeek)` 的回位只在没在浏览时执行。
 
 远端句子（距离 > 4）压到 `opacity: 0.2`，滚上去也不会跟当前句抢注意力。
+
+## 双击某一句 → 从那里开始唱
+
+翻到想听的那句，双击它，歌就跳过去从这一句开始播。每行带着自己的开始秒数（`data-lx-time`），双击时按坐标找到被点中的那一行，把秒数发给宿主，宿主转成落雪的 `GET /seek?offset=12.500`。
+
+三个实现细节：
+
+- **双击和滚轮一样是在 `window` 上按坐标截的** —— 舞台整体 `pointer-events: none`（不然会吃掉底下界面的点击），行上根本收不到 `dblclick`。
+- **落雪的 `/seek` 只认 query 参数**：把 `offset` 放进 JSON body 会回 `400 Invalid offset`，它把 body 里的值当成没给。所以是 `encodeURIComponent(offset.toFixed(3))` 拼在 query 上。
+- 跳转失败**不会**顺手去拉起播放器（和播放键的策略相反）：没有在播的歌，跳到哪一句都没意义。
 
 ## 已知边界
 

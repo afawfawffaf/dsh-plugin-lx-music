@@ -20,6 +20,7 @@ const expect = (label, condition, detail) => {
 // ---- 假落雪 ----
 const SAMPLE = ['[00:00.000]第一句', '[00:10.000]第二句', '[00:20.000]第三句'].join('\n')
 const controlHits = []
+let lastSeek = null
 let playStatus = 'playing'
 
 const fakeLx = http.createServer((req, res) => {
@@ -36,6 +37,12 @@ const fakeLx = http.createServer((req, res) => {
     return
   }
   controlHits.push(path)
+  if (path === '/seek') {
+    // 落雪的跳转只认 query 参数（body 里放 offset 会 400 Invalid offset）。
+    lastSeek = url.searchParams.get('offset')
+    res.end('{}')
+    return
+  }
   if (path === '/play') playStatus = 'playing'
   if (path === '/pause') playStatus = 'paused'
   if (['/play', '/pause', '/skip-next', '/skip-prev'].includes(path)) {
@@ -113,6 +120,29 @@ console.log('\ncontrol next / prev:')
 expect('next 打到 /skip-next', (await (await post('next')).json()).path === '/skip-next')
 expect('prev 打到 /skip-prev', (await (await post('prev')).json()).path === '/skip-prev')
 expect('四次控制都真的到了假落雪', controlHits.join(',') === '/pause,/play,/skip-next,/skip-prev', controlHits.join(','))
+
+console.log('\n双击歌词 → 跳到那一句:')
+const seekResponse = await fetch(`${base}/lx-music/control`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ action: 'seek', offset: 12.5 }),
+})
+const seekBody = await seekResponse.json()
+expect('seek 200', seekResponse.status === 200, JSON.stringify(seekBody))
+expect('seek 打到 /seek 且带三位小数', seekBody.path === '/seek?offset=12.500', String(seekBody.path))
+expect('offset 真的作为 query 发出去了', lastSeek === '12.500', String(lastSeek))
+const noOffset = await (await fetch(`${base}/lx-music/control`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ action: 'seek' }),
+})).json()
+expect('seek 没有 offset 直接 400（不瞎跳到 0）', noOffset.code === 'BAD_REQUEST', JSON.stringify(noOffset))
+const negative = await (await fetch(`${base}/lx-music/control`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ action: 'seek', offset: -3 }),
+})).status
+expect('负数 offset 也 400', negative === 400, String(negative))
 
 console.log('\n守卫:')
 expect('GET control 405', (await fetch(`${base}/lx-music/control`)).status === 405)

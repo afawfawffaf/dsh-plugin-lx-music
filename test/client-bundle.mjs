@@ -303,18 +303,43 @@ const distant = lxTest.slotStyle({ text: 'x', role: 'next', distance: 12 })
 check('滚上去的远端句子也读得清（字号不再缩到 12px）', distant.fontSize === '14px', String(distant.fontSize))
 check('远近只靠明暗区分', distant.opacity === 0.3, String(distant.opacity))
 
+// ---- 双击歌词：从这一句开始唱 ----
+check(
+  '每行带自己的开始秒数',
+  stageSource.includes("'data-lx-time': String(timeline && timeline[firstIndex + index]"),
+  '行上没有 data-lx-time',
+)
+check(
+  '双击在 window 上按坐标截（舞台 pointer-events: none，收不到行上的事件）',
+  source.includes("window.addEventListener('dblclick', onDoubleClick, true)") &&
+    source.includes("const rows = list.querySelectorAll('[data-lx-row]')") &&
+    source.includes("rows[i].getAttribute('data-lx-time')"),
+  '没有双击监听',
+)
+check(
+  '双击之后浏览状态立刻结束（不用等满 2 秒）',
+  source.includes('seekRef.current') && source.includes("if (typeof seek === 'function') seek(time)"),
+  '双击没接跳转',
+)
+check('舞台把 seekToLine 交给 useLyricBrowse', stageSource.includes('useLyricBrowse(localIndex, seekToLine)'), '舞台没传 seekToLine')
+check(
+  '跳转发的是 offset（落雪的 /seek 只认 query 参数）',
+  stageSource.includes("postControl('seek', { offset: seconds })"),
+  '没有发 seek 请求',
+)
+
 // ---- 回归：「点播放但落雪没开」要顺手拉起播放器 ----
 // 拉起可能要几秒，所以点下去先给一句提示；并且把「我想让它播」带上，
 // 免得播放器起来时本来就是播放态，重放的那次 toggle 反而把歌关掉。
 check(
-  '控制请求会带上想去的状态',
-  source.includes('const postControl = (action, desired)') && source.includes('{ action, desired }'),
-  '没找到 desired 透传',
+  '控制请求会把附加参数一起带上',
+  source.includes('const postControl = (action, extra)') && source.includes('{ action, ...extra }'),
+  '没找到附加参数透传',
 )
 check(
   '点播放时把 intended 状态一起发出去',
   stageSource.includes("postControl(action, nextPlaying === undefined"),
-  '没找到 postControl(action, desired)',
+  '没找到 postControl(action, nextPlaying)',
 )
 check(
   '还没有任何数据（播放器没开）时先提示一句再发请求',
