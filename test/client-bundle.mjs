@@ -296,12 +296,35 @@ check(
 )
 check(
   '当前句打了标记（回位靠它找锚点）',
-  stageSource.includes("'data-lx-current': slot.role === 'current'"),
+  stageSource.includes("'data-lx-current': isCurrent"),
   '当前句没有标记',
 )
 const distant = lxTest.slotStyle({ text: 'x', role: 'next', distance: 12 })
 check('滚上去的远端句子也读得清（字号不再缩到 12px）', distant.fontSize === '14px', String(distant.fontSize))
 check('远近只靠明暗区分', distant.opacity === 0.3, String(distant.opacity))
+
+// ---- 逐字着色：亮到哪个字就是唱到哪个字 ----
+const splitCn = lxTest.charsOf('心之所动')
+check('中文按字切', JSON.stringify(splitCn) === JSON.stringify(['心', '之', '所', '动']), JSON.stringify(splitCn))
+const splitEn = lxTest.charsOf('Tell me why')
+check(
+  '英文按词切（不然单词会断在中间）',
+  JSON.stringify(splitEn) === JSON.stringify(['Tell', ' ', 'me', ' ', 'why']),
+  JSON.stringify(splitEn),
+)
+check('空行也有一个字可占位', JSON.stringify(lxTest.charsOf('')) === JSON.stringify(['\u00a0']), JSON.stringify(lxTest.charsOf('')))
+check(
+  '当前行拆成逐字 span、初始是暗色',
+  stageSource.includes('charsOf(text).map') && stageSource.includes("jsx('span', { style: { color: LYRIC_DIM }"),
+  '当前行没有拆字',
+)
+check(
+  '每帧只改「刚亮/刚灭」的字（不整块重渲染）',
+  source.includes('const paintChars = (progress, index) =>') &&
+    source.includes('for (let i = begin; i < lit && i < total; i += 1)') &&
+    source.includes('litCount.current = lit'),
+  '逐字着色没有接在帧循环上',
+)
 
 // ---- 回归：「点播放但落雪没开」要顺手拉起播放器 ----
 // 拉起可能要几秒，所以点下去先给一句提示；并且把「我想让它播」带上，
