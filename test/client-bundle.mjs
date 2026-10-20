@@ -300,7 +300,8 @@ check(
   '当前句没有标记',
 )
 const distant = lxTest.slotStyle({ text: 'x', role: 'next', distance: 12 })
-check('滚上去的远端句子更暗（不抢当前句）', distant.opacity === 0.2, String(distant.opacity))
+check('滚上去的远端句子也读得清（字号不再缩到 12px）', distant.fontSize === '14px', String(distant.fontSize))
+check('远近只靠明暗区分', distant.opacity === 0.3, String(distant.opacity))
 
 // ---- 回归：「点播放但落雪没开」要顺手拉起播放器 ----
 // 拉起可能要几秒，所以点下去先给一句提示；并且把「我想让它播」带上，
