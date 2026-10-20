@@ -282,6 +282,12 @@ check(
   '没在歌词框上截滚轮',
 )
 check(
+  '一格滚轮走一行（原样 += deltaY 一格跳五行）',
+  source.includes('const BROWSE_WHEEL = 0.25') &&
+    source.includes('list.scrollTop += event.deltaY * unit * BROWSE_WHEEL'),
+  '滚轮步长没缩放',
+)
+check(
   '滚动容器定高 + 藏滚动条',
   stageSource.includes('data-lx-lyric-list') &&
     source.includes('height: \'150px\'') &&
