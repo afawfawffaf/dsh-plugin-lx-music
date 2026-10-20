@@ -309,6 +309,55 @@ check(
   'attachStage 没串联 stageRef',
 )
 
+// ---- 回归：「歌词和胶囊跟着跑到了别的页面」要收起来 ----
+// shell.overlay 是 frame 级座位，切页不卸载组件，所以得自己判断「还在不在对话页」。
+// 判据只用自己家的按钮（[data-lx-input]）：它在对话页才有，而且中心点必须真命中它
+// —— 设置页是盖在对话页上面的，只看「节点存在」会误判。
+check(
+  '输入框按钮带上了页面归属的锚点属性',
+  tree?.props?.['data-lx-input'] === 'button',
+  String(tree?.props?.['data-lx-input']),
+)
+check(
+  '用「自己的按钮还在不在最上层」判断是否还在对话页',
+  source.includes("document.querySelector('[data-lx-input]')") &&
+    source.includes('document.elementFromPoint(x, y)') &&
+    source.includes('seat.contains(hit)'),
+  '没找到页面归属的命中测试',
+)
+check(
+  '被对话框/popover 临时盖住不算离开对话页',
+  source.includes("hit.closest('dialog, [role=\"dialog\"], [popover]')"),
+  '没找到临时浮层的豁免',
+)
+check('舞台靠这个判断决定露不露脸', stageSource.includes('const onChat = usePageScope()'), '舞台没订阅页面归属')
+check(
+  '离开对话页时舞台返回 null',
+  stageSource.includes('if (!onChat || narrow || frame === null || !frame.play) return null'),
+  '早退条件里没有 onChat',
+)
+check(
+  '提示卡也跟着收起来',
+  String(Toast).includes('const onChat = usePageScope()') &&
+    String(Toast).includes('if (!onChat || !toast) return null'),
+  '提示卡没接页面归属',
+)
+check(
+  '采样器在 apply 里起一次（不是每个组件各起一个）',
+  source.includes('ensurePageScopeWatch()') && source.includes('const PAGE_SCOPE_MS = 800'),
+  '没找到 apply 里的采样器',
+)
+check(
+  '没有 document 的环境不自起定时器（否则离线自测会被吊住）',
+  source.includes("if (typeof document === 'undefined' || pageScope.timer !== null) return"),
+  '采样器没做无 document 的短路',
+)
+check(
+  '遮挡自检只在对话页里跑（别把我们自己收起当成「被盖住」）',
+  stageSource.includes('if (!onChat) return undefined') && stageSource.includes('}, [onChat])'),
+  '遮挡自检没接 onChat',
+)
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' 项没过：')

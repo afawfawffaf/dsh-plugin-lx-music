@@ -334,3 +334,26 @@ DSH 只给客户端 Builtin `ctx`/`React`/`host`/`styles`/`console`，没有 rea
 `open:true` = 真的进了顶层；`own:true` = 胶囊中心的 `elementFromPoint` 命中的是自己（`path` 是图标），
 说明按钮在自己面板上面、点得到；`others` 是当前顶层里的 popover 数量（只有我们一个）。
 
+## 为什么只在对话页显示（`page-scope`）
+
+`shell.overlay` 是 **frame 级**座位（DSH 的说明是 “Frame-wide floating layer”）：切到设置页、
+插件页、别人的面板时，我们的组件**不会卸载**，歌词和胶囊会一直浮在那些页面上。所以「只在对话页显示」
+必须自己判断，靠的是两件事：
+
+- **锚点**：`conversation.input.right` 里那个按钮带 `data-lx-input="button"`，它只在对话页存在。
+- **命中测试**：光看「按钮还在 DOM 里」不够 —— 设置页是**盖**在对话页上面的，composer 还在底下。
+  所以取按钮中心点做 `elementFromPoint`，命中的必须是自己（或自己的子孙）才算还在对话页。
+
+被 `dialog` / `[role="dialog"]` / `[popover]` 这类**临时**浮层盖住不算离开（那时用户正要点我们，
+不该突然收起歌词）。采样间隔 `PAGE_SCOPE_MS = 800`：切页后不到一秒收起，而下拉框那种瞬时浮层
+抓不成「离开」。刚启动时座位还没挂上，前 5 次采样（约 4 秒）先按「还在对话页」处理，避免加载时闪一下。
+
+自检：
+
+```
+{"stage":"page-scope","onChat":true,"hit":{"tag":"span","cls":""}}
+{"stage":"page-scope","onChat":false,"hit":{"tag":"div","cls":"dcu-settings-main"}}
+```
+
+`onChat:false` 且 `hit` 是设置页的容器，就说明「打开别的页面时歌词确实收起来了」。
+
