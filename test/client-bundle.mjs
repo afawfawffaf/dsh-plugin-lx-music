@@ -251,13 +251,45 @@ check('当前句挂上了入场动画', String(curStyle.animation || '').include
 check('相邻行用 near 动画', String(nearStyle.animation || '').includes('lx-lyric-near'), String(nearStyle.animation))
 check('外圈行用 far 动画', String(farStyle.animation || '').includes('lx-lyric-far'), String(farStyle.animation))
 check('空槽不加动画', emptyStyle.animation === undefined, String(emptyStyle.animation))
-check('槽位 key 带文本（否则换行复用节点、动画永不触发）', stageSource.includes("'slot:' + index"), '没找到带文本的 key')
+check('槽位 key 带文本（否则换行复用节点、动画永不触发）', stageSource.includes("'slot:' + (firstIndex + index)"), '没找到带文本的 key')
 check(
   '换行按帧对齐（rAF 调度 + 取消，不是 100ms 定时器）',
   stageSource.includes('requestAnimationFrame(frameLoop)') && stageSource.includes('cancelAnimationFrame(raf)'),
   '没找到 rAF 调度/取消',
 )
 check('舞台居中用了量出来的像素位移（百分比位移不参与过渡）', stageSource.includes('stageStyle(shift)'), '没找到 stageStyle(shift)')
+
+// ---- 滚动看词：翻得到上下文，停手 2 秒滑回正在唱的那句 ----
+check(
+  '歌词窗口上下各多铺 12 句（滚得到上下文）',
+  source.includes('const BROWSE_SPAN = 12') && stageSource.includes('slotsAtTimeline(timeline, localIndex, BROWSE_SPAN)'),
+  '没有为滚动多铺上下文',
+)
+check(
+  '停手 2 秒回到当前句',
+  source.includes('const BROWSE_IDLE_MS = 2000') && source.includes('centerOnCurrent(true)'),
+  '没有自动回位',
+)
+check(
+  '滚轮按坐标截（舞台 pointerEvents: none，收不到 native 滚动）',
+  source.includes("window.addEventListener('wheel', onWheel, { passive: false, capture: true })") &&
+    source.includes('event.clientX < box.left'),
+  '没在歌词框上截滚轮',
+)
+check(
+  '滚动容器定高 + 藏滚动条',
+  stageSource.includes('data-lx-lyric-list') &&
+    source.includes('height: \'150px\'') &&
+    source.includes('scrollbarWidth: \'none\''),
+  '视口没定高或滚动条露出来了',
+)
+check(
+  '当前句打了标记（回位靠它找锚点）',
+  stageSource.includes("'data-lx-current': slot.role === 'current'"),
+  '当前句没有标记',
+)
+const distant = lxTest.slotStyle({ text: 'x', role: 'next', distance: 12 })
+check('滚上去的远端句子更暗（不抢当前句）', distant.opacity === 0.2, String(distant.opacity))
 
 // ---- 回归：「点播放但落雪没开」要顺手拉起播放器 ----
 // 拉起可能要几秒，所以点下去先给一句提示；并且把「我想让它播」带上，

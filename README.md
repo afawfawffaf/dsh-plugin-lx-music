@@ -211,6 +211,28 @@ New-Item -ItemType Junction -Path "$profileDir\node_modules\dsh-plugin-lx-music"
 `plugin.__lxTest.indexAtTimeline` 直接验换行边界（未到首句 → -1、正好踩时间戳 → 该行、两行之间 → 前一行、末句之后 → 末行），
 并钉住上面三件事（key 带文本、当前句定高、rAF 调度）与三组关键帧 —— 回退任意一条都会红。
 
+## 滚动看词（滚一下看上下文，停手 2 秒回位）
+
+歌词窗口不只画当前句上下各两句，而是一整窗 **当前句 ± 12 句**，塞在一个定高 150px、
+藏起滚动条的容器里（`overflow-y: auto` + `mask-image` 让上下边缘化进背景）。
+
+舞台整体是 `pointerEvents: none` —— 不然它会吃掉底下界面的点击。代价是它收不到 native 滚动事件：
+滚轮会落到下面的元素上。所以滚轮是在 `window` 上用捕获阶段按坐标截下来的：
+
+```js
+if (event.clientX < box.left || event.clientX > box.right) return
+if (event.clientY < box.top || event.clientY > box.bottom) return
+event.preventDefault()
+list.scrollTop += event.deltaY
+```
+
+只有指针真的在歌词框里才 `preventDefault`，框外的滚轮照常滚对话。滚动开始后记一个 2 秒的
+空闲计时器，到点 `scrollTo({ top, behavior: 'smooth' })` 把正在唱的那句滑回视口正中
+（锚点是当前句节点上的 `data-lx-current`）。用户正在翻的时候，换行不会抢他的滚动位置 ——
+`useLyricBrowse(localIndex)` 的回位只在没在浏览时执行。
+
+远端句子（距离 > 4）压到 `opacity: 0.2`，滚上去也不会跟当前句抢注意力。
+
 ## 已知边界
 
 - 开放 API 没开时，歌词层静默不画（不弹错误、不占位），控制条也不出现；设置页那行会写明「开放 API 未连接」。
