@@ -344,8 +344,21 @@ check(
 )
 check(
   '采样器在 apply 里起一次（不是每个组件各起一个）',
-  source.includes('ensurePageScopeWatch()') && source.includes('const PAGE_SCOPE_MS = 800'),
+  source.includes('ensurePageScopeWatch()') && source.includes('const PAGE_SCOPE_MS = 400'),
   '没找到 apply 里的采样器',
+)
+check(
+  '发现被挤窄就立刻收起（不等第二次采样，否则观感上慢半拍）',
+  source.includes('if (narrowed) return { onChat: false, hit: null }'),
+  '挤窄判据还在等第二次采样',
+)
+check(
+  '挤窄靠 ResizeObserver 立即重采样（轮询只是兜底）',
+  source.includes('const watchSeat = () => {') &&
+    source.includes('const observer = new ResizeObserver(() => sample())') &&
+    source.includes('observer.observe(seat)') &&
+    source.includes('watchSeat()'),
+  '没有在输入框上挂 ResizeObserver',
 )
 check(
   '没有 document 的环境不自起定时器（否则离线自测会被吊住）',
@@ -356,6 +369,62 @@ check(
   '遮挡自检只在对话页里跑（别把我们自己收起当成「被盖住」）',
   stageSource.includes('if (!onChat) return undefined') && stageSource.includes('}, [onChat])'),
   '遮挡自检没接 onChat',
+)
+// ---- 回归：「右侧抽屉/分栏/窄面板」不会被 composer 判据抓到 ----
+// 抽屉不盖输入框，所以按钮中心照样命中自己；得看「歌词自己那一块底下是谁」。
+check(
+  '抽屉类面板用「歌词底下压着的浮层」判断',
+  source.includes('const PANEL_Z = 2') &&
+    source.includes('function foreignPanelAt(point)') &&
+    source.includes('function foreignAt(point)') &&
+    source.includes('function stageProbePoint()') &&
+    source.includes('const panel = foreignPanelAt(point)'),
+  '没找到浮层面板的判据',
+)
+check(
+  '占位型分栏的结构判据只记录、不动作（阈值未校准）',
+  source.includes('function sharesSeatColumn(under, seat, maxDepth = 2)') &&
+    source.includes('const sameColumn = !under || sharesSeatColumn(under, seat)') &&
+    source.includes('只记录不动作'),
+  '结构判据的接线不对',
+)
+check(
+  '浮层判据只看定位过且 z-index >= PANEL_Z 的元素',
+  source.includes("css.position === 'fixed' || css.position === 'absolute' || css.position === 'sticky'") &&
+    source.includes('z >= PANEL_Z'),
+  '浮层判据没限制定位与 z-index',
+)
+check(
+  '没 z-index 的右侧抽屉靠几何兜（整块在输入框右边、面板尺寸）',
+  source.includes('function panelish(el)') &&
+    source.includes("css.position === 'static' || typeof el.getBoundingClientRect !== 'function'") &&
+    source.includes('rect.left >= Math.round(box.right) - 8') &&
+    source.includes('rect.width > 120 && rect.height > 120'),
+  '没找到几何兜底分支',
+)
+check(
+  '面板判据会往上看几层（抽屉的定位容器常在上面两三层）',
+  source.includes('for (let depth = 0; node && depth < 4; depth += 1)') &&
+    source.includes('node = node.parentElement'),
+  '面板判据只看最上面那颗元素',
+)
+check(
+  '自己的两块（歌词 + 提示卡）在判据里被跳过',
+  source.includes("el.closest('[data-lx-stage], [data-lx-toast]')") &&
+    String(Toast).includes("'data-lx-toast': 'toast'"),
+  '浮层判据没跳过自己',
+)
+check(
+  '探针点会记下来（舞台收起后仍能继续判断，不会每 800ms 闪一次）',
+  source.includes('pageScope.point = {') && source.includes('return pageScope.point'),
+  '探针点没做记忆',
+)
+check(
+  '快照同时拍输入框和歌词两个点',
+  source.includes("stage: 'page-snapshot'") &&
+    source.includes('stageStack') &&
+    source.includes('panel: panel'),
+  'page-snapshot 没拍歌词那个点',
 )
 
 console.log('')
