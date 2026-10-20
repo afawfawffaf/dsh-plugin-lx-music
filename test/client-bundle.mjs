@@ -288,6 +288,27 @@ check(
 )
 
 
+// ---- 回归：「别的插件面板一开，歌词和按钮就被盖住」要压到浏览器顶层 ----
+// 座位本身挂在一个 z-index:20 的堆叠上下文里（实测 .BynINW_overlayLayer），
+// 里面写多大的 z-index 都白搭，所以只能靠 popover 的 top layer。
+check(
+  '舞台被提到 popover 顶层（z-index 再大也压不过别人的堆叠上下文）',
+  source.includes("setAttribute('popover', 'manual')") && source.includes('showPopover()'),
+  '没找到 popover 顶层',
+)
+check('舞台真的接上了顶层（不是只定义了函数）', stageSource.includes('useTopLayer(stageNode)'), '舞台没调用 useTopLayer')
+check('提示卡也提到顶层', source.includes('useTopLayer(overlayNode)'), '提示卡没调用 useTopLayer')
+check(
+  '顶层复位了 popover 的 UA 样式（否则歌词块变成白底方块）',
+  source.includes("inset: 'auto'") && source.includes("background: 'transparent'"),
+  '没复位 inset/background',
+)
+check(
+  '测高 ref 没被顶层 ref 顶掉（两件事共用一个回调 ref）',
+  stageSource.includes('stageRef(node)') && stageSource.includes('setStageNode(node)'),
+  'attachStage 没串联 stageRef',
+)
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' 项没过：')

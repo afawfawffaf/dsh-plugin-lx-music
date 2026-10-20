@@ -296,3 +296,41 @@ New-Item -ItemType Junction -Path "$profileDir\node_modules\dsh-plugin-lx-music"
 - 各行的 `opacity` 报的是动画第一帧的值（`.35 / .3 / .14`），不是 0 —— 整块不会随换行暗一下；
 - `block` 在多次换行之间不变（本机实测一直是 172）→ 当前句换行不会带动整块重排。
 
+## 为什么歌词能压过别的插件面板（top layer）
+
+现象：打开别的插件的面板（设置页、`dsh-comfyui` 的任务队列）后，歌词和胶囊整个被盖住，只在边上漏出一点点。
+
+原因不是 z-index 不够大，而是**位置放错了层**。`shell.overlay` 这个座位挂在
+`.BynINW_overlayLayer`（`position:absolute; z-index:20`）里面，那是一个**独立的堆叠上下文** ——
+里面写 `z-index: 2147482000` 也只是在这一层内部排第一，而这一层本身在 `.BynINW_frame` 里排第 20 名，
+面板（`.dsc-panel{z-index:900}`、设置页）都在它上面。实测祖先链：
+
+```
+div(fixed, z=2147482000) > div(static) > div.BynINW_overlayLayer(z=20) > div.BynINW_frame > body
+```
+
+解法是 **popover 的顶层（top layer）**：`node.setAttribute('popover','manual')` + `node.showPopover()`。
+顶层不受任何 z-index / 堆叠上下文影响，而且节点**留在 React 树里**（`createPortal` 那条路走不通 ——
+DSH 只给客户端 Builtin `ctx`/`React`/`host`/`styles`/`console`，没有 react-dom；把节点搬到 `body`
+还会让 React 18 的事件委托失效，按钮直接点不动）。`manual` 模式不会被 light-dismiss 关掉。
+
+三个坑，都踩过：
+
+1. **UA 样式要逐项清掉**。popover 一显示，浏览器就补上 `inset:0 / margin / border / background:Canvas /
+   padding / overflow:auto` —— 不清就是白底方块。`stageStyle` / `toastOverlayStyle` 里逐项复位。
+2. **`inset:'auto'` 必须写在 `top`/`right` 之前**。它是四方向的简写，排在后面会把刚写好的
+   `top:50%`、`right:clamp(...)` 一起抹成 `auto`（React 按对象顺序逐条写 style）。第一版就是这么把
+   整条歌词甩到屏幕左上角外面去的 —— 几何自报里 `controls.y = -113` 直接抓到了。
+3. **自检要延后**。提顶层的 `useLayoutEffect` 依赖 `stageNode` 这个 state，要等 ref 回调触发重渲染之后
+   才跑；当场测会测到「还没提上去」的旧状态，误判成失败。`top-layer-hit` 因此延后 600ms。
+
+自检一条：
+
+```
+{"stage":"top-layer-hit","open":true,"others":1,"own":true,
+ "hit":{"tag":"path","cls":"","z":"auto"},"parent":{"tag":"div","cls":"","z":"auto"}}
+```
+
+`open:true` = 真的进了顶层；`own:true` = 胶囊中心的 `elementFromPoint` 命中的是自己（`path` 是图标），
+说明按钮在自己面板上面、点得到；`others` 是当前顶层里的 popover 数量（只有我们一个）。
+
